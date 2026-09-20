@@ -894,9 +894,8 @@ export class UserConfigService {
   getSettings(): AppSettings {
     const s = this.read().settings;
     const d = DEFAULT_APP_SETTINGS;
-    // macOS 不支持注入（SIP 限制），此开关恒为 false：即使旧配置（从
-    // win/linux 迁移或手动篡改）里存了 true，也在这里归一化掉，保证
-    // 「完全离线」行为在 macOS 上不可绕过。
+    // 当前 macOS native 没有运行中 QQ 的协议注入实现；不能靠配置开启。
+    // Web CGI 使用独立的 pt_login 快速登录能力，不受此平台限制。
     const autoInjectQq =
       this.platform.kind === 'darwin' ? false : (s?.autoInjectQq ?? d.autoInjectQq);
     return {

@@ -221,7 +221,7 @@ native 不自己猜**；级别 0 时读取与今天逐字节相同。
 
 ## 6. 注入 hook 与在线协议发包
 
-「要密钥 / 拿在线数据（图片 rkey、cookie、skey 等）」前提是把 hook 注入进在线 QQ 进程。**Windows / Linux 用注入，macOS 因 SIP 走 `ninebird` 加载器**（见 `docs/principles/ninebird-macos.md`）。整套 hook 管道的 IPC 由 native 侧维护（unix socket / named pipe），JS 侧不用关心。
+协议取密钥 / rkey 需要可用的 hook 通道。**Windows / Linux 用注入；当前 macOS native 没有运行中 QQ 的协议注入实现**，NineBird 登录加载器用于取数据库密钥，不等于持久发包通道。关闭 SIP 也不会补齐这个实现。Web CGI 的 skey / p_skey 可独立通过本地 `pt_login` 获取，macOS 的 Web 凭据层直接走这条路径，不尝试不可用的 hook。整套 hook 管道的 IPC 由 native 侧维护（unix socket / named pipe）。
 
 ### 6.1 注入与就绪
 

@@ -80,13 +80,13 @@ function services(): AccountServices {
 // ── 在线能力（凭据 / OIDB 协议 / Web CGI）公共小工具 ─────────────────────────
 
 /** 当前账号的 QQ 进程 pid；离线 / 完全离线模式时抛可读错误。 */
-function onlinePid(): number {
+function onlinePid(requireHook = true): number {
   const ctx = getAppContext();
   const record = services().accountConfig.getRecord();
   if (!record?.qqOnline || !record.qqPid) {
     throw new Error('需要先登录该账号的 QQ 客户端（本工具要走在线实例）。');
   }
-  if (ctx.bootstrap?.userConfig.getSettings().autoInjectQq === false) {
+  if (requireHook && ctx.bootstrap?.userConfig.getSettings().autoInjectQq === false) {
     throw new Error('已开启完全离线模式（自动注入 QQ 已关闭），本工具不可用。');
   }
   return record.qqPid;
@@ -3069,7 +3069,9 @@ export const AI_TOOLS: AiTool[] = [
       needSkey: z.boolean().default(false).describe('是否同时取 skey（默认只要 p_skey）'),
     }),
     run: async ({ domain, needSkey }) => {
-      const pid = onlinePid();
+      // macOS uses only pt_login here, just like the QZone window and web
+      // export. Its disabled injection switch must not reject this read.
+      const pid = onlinePid(process.platform !== 'darwin');
       const uin = currentUin();
       const tokens = await fetchWebTokens(ntHelper(), uin, pid, domain, { needSkey });
       if (!tokens.pskey && !tokens.skey) {

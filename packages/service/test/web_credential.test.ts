@@ -6,8 +6,82 @@
  * 公式和几个金标准值。
  */
 
-import { describe, expect, it } from 'vitest';
-import { computeBkn, cookieHeader, type WebCredential } from '../src/account/web/credential';
+import { describe, expect, it, vi } from 'vitest';
+import {
+  computeBkn,
+  cookieHeader,
+  fetchWebTokens,
+  WebCredentialProvider,
+  type WebCredential,
+  type WebNative,
+} from '../src/account/web/credential';
+
+function ptLoginNative() {
+  return {
+    sendOidbPacket: vi.fn(async () => {
+      throw new Error('packet transport must not be used');
+    }),
+    probePtLoginPort: vi.fn(() => ({ success: true, port: 4301, msg: '' })),
+    ptFetchSkey: vi.fn(async () => ({ success: true, skey: 'test-skey', msg: '' })),
+    ptFetchPskey: vi.fn(async () => ({ success: true, pskey: 'test-pskey', msg: '' })),
+  } satisfies WebNative;
+}
+
+describe('pt_login without native injection', () => {
+  it('preserves the hook-first fallback used by other platforms', async () => {
+    const nt = ptLoginNative();
+    await expect(
+      fetchWebTokens(nt, '10001', 42, 'qzone.qq.com', { transport: 'hook-first' }),
+    ).resolves.toEqual({ skey: '', pskey: 'test-pskey' });
+    expect(nt.sendOidbPacket).toHaveBeenCalled();
+    expect(nt.ptFetchPskey).toHaveBeenCalledTimes(1);
+  });
+
+  it('fetches web tokens without invoking the unavailable packet channel', async () => {
+    const nt = ptLoginNative();
+    await expect(
+      fetchWebTokens(nt, '10001', 42, 'qzone.qq.com', {
+        needSkey: true,
+        transport: 'pt-login',
+      }),
+    ).resolves.toEqual({ skey: 'test-skey', pskey: 'test-pskey' });
+    expect(nt.sendOidbPacket).not.toHaveBeenCalled();
+    expect(nt.ptFetchPskey).toHaveBeenCalledWith(4301, '10001', 'qzone.qq.com');
+  });
+
+  it('caches credentials and remints them after a web authentication rejection', async () => {
+    const nt = ptLoginNative();
+    let pid = 42;
+    const provider = new WebCredentialProvider(nt, '10001', () => pid, 'pt-login');
+    const first = await provider.forDomain('qzone.qq.com');
+    expect(first.cookie).toContain('p_skey=test-pskey');
+    await provider.forDomain('qzone.qq.com');
+    expect(nt.ptFetchPskey).toHaveBeenCalledTimes(1);
+    pid = 43;
+    provider.invalidate('qzone.qq.com');
+    await provider.forDomain('qzone.qq.com');
+    expect(nt.probePtLoginPort).toHaveBeenLastCalledWith(43);
+    expect(nt.ptFetchPskey).toHaveBeenCalledTimes(2);
+    expect(nt.sendOidbPacket).not.toHaveBeenCalled();
+  });
+
+  it('fails unsupported domains without attempting injection', async () => {
+    const nt = ptLoginNative();
+    const provider = new WebCredentialProvider(nt, '10001', () => 42, 'pt-login');
+    await expect(provider.forDomain('ti.qq.com')).rejects.toThrow('pt_login');
+    expect(nt.sendOidbPacket).not.toHaveBeenCalled();
+    expect(nt.probePtLoginPort).not.toHaveBeenCalled();
+  });
+
+  it('returns no credentials when local quick login is unavailable', async () => {
+    const nt = ptLoginNative();
+    nt.probePtLoginPort.mockReturnValue({ success: false, port: 0, msg: 'offline' });
+    await expect(
+      fetchWebTokens(nt, '10001', 42, 'qzone.qq.com', { transport: 'pt-login' }),
+    ).resolves.toEqual({ skey: '', pskey: '' });
+    expect(nt.sendOidbPacket).not.toHaveBeenCalled();
+  });
+});
 
 describe('computeBkn', () => {
   it.each([

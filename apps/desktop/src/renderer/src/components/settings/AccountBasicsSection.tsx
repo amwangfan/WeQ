@@ -141,7 +141,7 @@ export function AccountBasicsSection(): ReactElement {
   const settingsLoading = settings.isLoading;
   const isStatic = cfg?.static ?? false;
   const nativeMediaDir = cfg?.nativeMediaDir ?? null;
-  // macOS 不支持注入（SIP 限制）：开关置灰 + 专属文案。
+  // 当前 macOS native 未实现协议注入；Web 快速登录仍可用。
   const isMac = systemInfo.data?.platformKind === 'darwin';
 
   async function copyText(text: string, onOk?: () => void): Promise<void> {
@@ -461,7 +461,7 @@ export function AccountBasicsSection(): ReactElement {
           }
           desc={
             isMac
-              ? 'macOS 版不支持注入 QQ（SIP 限制），此开关不可用。请手动填入数据库密钥使用。'
+              ? 'macOS 暂不支持聊天漫游补全；无需关闭 SIP。QQ 在线时仍可读取 QQ 空间与相册。'
               : '默认开启：后台自动注入登录中的 QQ，采集 rKey / ClientKey 等凭证，启用媒体补全、群相册、装扮等在线功能。关闭后进入完全离线模式——不再注入 QQ、不再联网换取任何凭证，仅使用本地数据与本地文件。'
           }
           control={

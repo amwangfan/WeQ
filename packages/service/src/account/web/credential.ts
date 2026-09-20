@@ -135,6 +135,13 @@ export interface WebTokens {
   pskey: string;
 }
 
+/** macOS ships pt_login but no cross-process packet transport. */
+export type WebCredentialTransport = 'hook-first' | 'pt-login';
+
+function defaultWebTransport(): WebCredentialTransport {
+  return process.platform === 'darwin' ? 'pt-login' : 'hook-first';
+}
+
 /**
  * 取某个在线 QQ 进程的 skey / p_skey（用于窗口自动登录等一次性场景）。
  * 已注入时走 hook 上的 TS ptlogin2 流程（秒回）；未注入 / 完全离线模式回退
@@ -146,15 +153,17 @@ export async function fetchWebTokens(
   uin: string,
   pid: number,
   domain: string,
-  opts: { needSkey?: boolean } = {},
+  opts: { needSkey?: boolean; transport?: WebCredentialTransport } = {},
 ): Promise<WebTokens> {
   if (!PT_LOGIN_DOMAINS.has(domain)) return { skey: '', pskey: '' };
-  try {
-    const skey = opts.needSkey ? await fetchSkeyFromHook(nt, pid, uin) : '';
-    const pskey = await fetchPskeyFromHook(nt, pid, uin, domain);
-    if (pskey && (opts.needSkey ? skey : true)) return { skey, pskey };
-  } catch {
-    /* 未注入 / 注入掉了 → 走 pt_login 兜底 */
+  if ((opts.transport ?? defaultWebTransport()) === 'hook-first') {
+    try {
+      const skey = opts.needSkey ? await fetchSkeyFromHook(nt, pid, uin) : '';
+      const pskey = await fetchPskeyFromHook(nt, pid, uin, domain);
+      if (pskey && (opts.needSkey ? skey : true)) return { skey, pskey };
+    } catch {
+      /* 未注入 / 注入掉了 → 走 pt_login 兜底 */
+    }
   }
   try {
     const skey = opts.needSkey ? await fetchSkeyViaPtLogin(nt, pid, uin) : '';
@@ -196,6 +205,7 @@ export class WebCredentialProvider {
     private readonly nt: WebNative,
     private readonly uin: string,
     private readonly resolvePid: () => number,
+    private readonly transport: WebCredentialTransport = defaultWebTransport(),
   ) {
     this.logger = getLogger().child({ scope: 'web-credential', accountUin: this.uin });
   }
@@ -243,6 +253,9 @@ export class WebCredentialProvider {
    * pt_login 兜底。
    */
   private async hookCall<T>(pid: number, fn: () => Promise<T>): Promise<T> {
+    if (this.transport === 'pt-login') {
+      throw new Error('当前平台仅支持 pt_login Web 凭据，不支持 hook 协议');
+    }
     if (this.isHookKnownDead(pid)) {
       throw new Error('hook 控制 socket 已知不可达（负缓存窗口内），跳过 hook 调用');
     }
@@ -392,6 +405,9 @@ export class WebCredentialProvider {
    * 致命错误(也兼容完全离线模式、自动注入 QQ 关闭的账号)。
    */
   private async harvestJar(pid: number, domain: string): Promise<Record<string, string>> {
+    // Do not probe an unimplemented native channel on macOS. This also keeps
+    // read-only web export independent of QQ injection and its offline switch.
+    if (this.transport === 'pt-login') return {};
     const cached = this.cookieByDomain.get(domain);
     if (cached) return parseCookieHeader(cached);
 
