@@ -943,6 +943,8 @@ export function DbRepairPanel({
   const pickCacheLocation = trpc.dbRepair.pickCacheLocation.useMutation();
   const resetCacheLocation = trpc.dbRepair.resetCacheLocation.useMutation();
   const changingCache = pickCacheLocation.isLoading || resetCacheLocation.isLoading;
+  // 只读体检不使用修复缓存，不能妨碍用户在开修前解决空间不足。
+  const cacheLocationLocked = running || busy === 'backup' || changingCache;
 
   async function changeCacheLocation(reset: boolean): Promise<void> {
     try {
@@ -1811,7 +1813,7 @@ export function DbRepairPanel({
                   className="weq-set-btn weq-set-btn-sm"
                   title="选择修复缓存位置"
                   aria-label="选择修复缓存位置"
-                  disabled={busy !== null || changingCache}
+                  disabled={cacheLocationLocked}
                   onClick={() => void changeCacheLocation(false)}
                 >
                   <FolderOpen size={14} aria-hidden />
@@ -1821,7 +1823,7 @@ export function DbRepairPanel({
                   className="weq-set-btn weq-set-btn-sm"
                   title="恢复默认修复缓存位置"
                   aria-label="恢复默认修复缓存位置"
-                  disabled={busy !== null || changingCache || !cacheLocation.data?.override}
+                  disabled={cacheLocationLocked || !cacheLocation.data?.override}
                   onClick={() => void changeCacheLocation(true)}
                 >
                   <RotateCcw size={14} aria-hidden />
