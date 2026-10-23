@@ -50,7 +50,12 @@ vi.mock('../src/renderer/src/trpc/client', () => {
               pendingWalBytes: 0,
               dbBytes: 1024,
               space: [
-                { paths: ['/synthetic/cache'], freeBytes: fixture.freeBytes, requiredBytes: 100 },
+                {
+                  paths: ['/synthetic/cache'],
+                  freeBytes: fixture.freeBytes,
+                  requiredBytes: 100,
+                  recommendedBytes: 125,
+                },
               ],
             },
           }),
@@ -172,6 +177,38 @@ it('真正开始修复后，缓存选择与恢复默认仍保持禁用', async (
   expect(fixture.start).toHaveBeenCalledOnce();
   expect(button('选择修复缓存位置').disabled).toBe(true);
   expect(button('恢复默认修复缓存位置').disabled).toBe(true);
+});
+
+it('仅建议余量不足时可以打开确认，明确接受风险后才提交强制继续', async () => {
+  fixture.freeBytes = 110;
+  await act(async () => finishCheckup());
+  selectDatabase();
+  expect(button('开始修复').disabled).toBe(false);
+  act(() => button('开始修复').click());
+  expect(button('仍要继续并修复').disabled).toBe(true);
+  const consent = host.querySelector<HTMLInputElement>('input[aria-label="余量不足时仍继续"]');
+  expect(consent).not.toBeNull();
+  act(() => consent!.click());
+  expect(button('仍要继续并修复').disabled).toBe(false);
+  await act(async () => button('仍要继续并修复').click());
+  expect(fixture.start).toHaveBeenCalledWith(expect.objectContaining({ allowLowSpace: true }));
+});
+
+it('余量风险确认不沿用到取消后重新打开的修复', async () => {
+  fixture.freeBytes = 110;
+  await act(async () => finishCheckup());
+  selectDatabase();
+  act(() => button('开始修复').click());
+  const consent = host.querySelector<HTMLInputElement>('input[aria-label="余量不足时仍继续"]')!;
+  act(() => consent.click());
+  expect(button('仍要继续并修复').disabled).toBe(false);
+  act(() => button('取消').click());
+  act(() => button('开始修复').click());
+  expect(
+    host.querySelector<HTMLInputElement>('input[aria-label="余量不足时仍继续"]')!.checked,
+  ).toBe(false);
+  expect(button('仍要继续并修复').disabled).toBe(true);
+  expect(fixture.start).not.toHaveBeenCalled();
 });
 
 it('只备份正在使用缓存时，目录控件仍保持禁用', async () => {

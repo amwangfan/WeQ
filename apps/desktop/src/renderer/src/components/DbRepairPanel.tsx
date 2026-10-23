@@ -131,7 +131,12 @@ type DbRepairReadiness =
 interface DbRepairPreflightView {
   cachePath: string;
   storageOptimized: boolean;
-  space: Array<{ paths: string[]; freeBytes: number | null; requiredBytes: number }>;
+  space: Array<{
+    paths: string[];
+    freeBytes: number | null;
+    requiredBytes: number;
+    recommendedBytes: number;
+  }>;
   readiness: DbRepairReadiness;
   holders: Array<{ pid: number; name: string }>;
   qqHolders: Array<{ pid: number; name: string }>;
@@ -173,6 +178,7 @@ type DbRepairFailureCode =
   | 'no-credentials'
   | 'blocked'
   | 'insufficient-space'
+  | 'space-margin'
   | 'busy'
   | 'changed-during-repair'
   | 'needs-confirm'
@@ -212,6 +218,7 @@ const FAILURE_TITLES: Record<DbRepairFailureCode, string> = {
   'changed-during-repair': '修复期间库被改动，已中止',
   'verify-failed': '修复产物自检未通过',
   'insufficient-space': '磁盘空间不够',
+  'space-margin': '磁盘建议余量不足',
   'no-credentials': '拿不到数据库密钥',
   'not-found': '找不到这个数据库',
   busy: '已有修复任务在跑',
@@ -220,9 +227,11 @@ const FAILURE_TITLES: Record<DbRepairFailureCode, string> = {
   'recover-failed': '重建失败',
 };
 
-/** 这两类失败一定发生在替换**之前**，所以可以说「替换还没开始」（别的不能这么说）。 */
+/** 这些失败一定发生在替换**之前**，所以可以说「替换还没开始」（别的不能这么说）。 */
 const PRE_SWAP_FAILURES: ReadonlySet<DbRepairFailureCode> = new Set([
   'blocked',
+  'insufficient-space',
+  'space-margin',
   'changed-during-repair',
 ] as const);
 
@@ -479,7 +488,7 @@ function Metric({
   icon: ReactNode;
   label: string;
   value: string;
-  hint?: string;
+  hint?: ReactNode;
   tone?: Tone;
 }): ReactElement {
   return (
@@ -874,6 +883,7 @@ export function DbRepairPanel({
   /** 修复前的确认（点「开始修复」不会立刻开跑）。 */
   /** 确认卡是哪种操作：通用修复 / 布局迁移。 */
   const [confirmRepair, setConfirmRepair] = useState<'repair' | 'layout-migration' | null>(null);
+  const [allowLowSpace, setAllowLowSpace] = useState(false);
   /** 正在跑的那件事（按钮据此禁用，避免同时发起两个任务）。 */
   const [busy, setBusy] = useState<'repair' | 'restore' | 'backup' | 'checkup' | 'kill' | null>(
     null,
@@ -915,6 +925,10 @@ export function DbRepairPanel({
     },
   );
   const preflight = preflightQuery.data as DbRepairPreflightView | undefined;
+  useEffect(() => {
+    // 确认只对本次操作与当前缓存位置有效，不沿用上一次的风险接受。
+    setAllowLowSpace(false);
+  }, [confirmRepair, dbName, preflight?.cachePath]);
   /**
    * 页布局检测：只在修复页选中库时跑（不在启动 / 面板挂载时自动跑）。
    *
@@ -1166,6 +1180,7 @@ export function DbRepairPanel({
       const result = (await startRepair.mutateAsync({
         uin,
         dbName: target,
+        ...(allowLowSpace ? { allowLowSpace: true } : {}),
         ...(layoutMigration ? { layoutMigration: true } : {}),
       })) as DbRepairTaskResultView;
       // 分类好的失败是**返回值**（这样才带得回「账号是否已被关掉」），不是异常。
@@ -1356,6 +1371,14 @@ export function DbRepairPanel({
   const readiness = preflight ? READINESS_COPY[preflight.readiness] : null;
   const spaceShort = Boolean(
     preflight?.space.some((item) => item.freeBytes !== null && item.freeBytes < item.requiredBytes),
+  );
+  const marginShort = Boolean(
+    preflight?.space.some(
+      (item) =>
+        item.freeBytes !== null &&
+        item.freeBytes >= item.requiredBytes &&
+        item.freeBytes < item.recommendedBytes,
+    ),
   );
   const canStart =
     uin !== null &&
@@ -1782,11 +1805,20 @@ export function DbRepairPanel({
                       item.paths.length > 1 ? '缓存与原库卷' : index === 0 ? '缓存卷' : '原库卷'
                     }
                     value={item.freeBytes !== null ? formatBytes(item.freeBytes) : '未知'}
-                    hint={`需预留约 ${formatBytes(item.requiredBytes)}`}
+                    hint={
+                      <>
+                        <span className="weq-rp-space-line">
+                          预计新增 {formatBytes(item.requiredBytes)}
+                        </span>
+                        <span className="weq-rp-space-line">
+                          建议预留 {formatBytes(item.recommendedBytes)}
+                        </span>
+                      </>
+                    }
                     tone={
                       item.freeBytes === null
                         ? undefined
-                        : item.freeBytes < item.requiredBytes
+                        : item.freeBytes < item.recommendedBytes
                           ? 'warn'
                           : 'ok'
                     }
@@ -1873,10 +1905,20 @@ export function DbRepairPanel({
                 .filter((item) => item.freeBytes !== null && item.freeBytes < item.requiredBytes)
                 .map((item) => (
                   <Note key={item.paths.join('|')} tone="warn">
-                    {item.paths.join('、')}：需预留约 {formatBytes(item.requiredBytes)}，当前可用{' '}
-                    {formatBytes(item.freeBytes)}。
+                    {item.paths.join('、')}：预计新增峰值约 {formatBytes(item.requiredBytes)}
+                    ，当前可用 {formatBytes(item.freeBytes)}。
                   </Note>
                 ))}
+              {marginShort && !spaceShort ? (
+                <Note tone="warn">
+                  预计峰值空间足够，但建议余量不足；实际占用可能超过估算，继续可能因磁盘写满而失败。
+                </Note>
+              ) : null}
+              {preflight && !preflight.storageOptimized ? (
+                <Note tone="muted">
+                  当前原生组件尚未提供低占用修复能力，预计新增空间仍按旧流程计算。
+                </Note>
+              ) : null}
               {notice ? (
                 <Note tone="warn" icon={<AlertTriangle size={14} strokeWidth={2} />}>
                   {notice}
@@ -1979,15 +2021,32 @@ export function DbRepairPanel({
                   {currentCheckup ? null : (
                     <p className="weq-rp-hint">尚未检查该数据库，请先核对目标与修复选项。</p>
                   )}
+                  {marginShort && !spaceShort ? (
+                    <label className="weq-rp-space-consent">
+                      <input
+                        type="checkbox"
+                        aria-label="余量不足时仍继续"
+                        checked={allowLowSpace}
+                        onChange={(event) => setAllowLowSpace(event.currentTarget.checked)}
+                      />
+                      <span>我接受磁盘余量不足的风险，仍要继续</span>
+                    </label>
+                  ) : null}
                   <div className="weq-rp-actions">
                     <button
                       type="button"
                       className="weq-set-btn weq-set-btn-danger"
-                      disabled={!canStart}
+                      disabled={!canStart || (marginShort && !allowLowSpace)}
                       onClick={() => void handleRepair(confirmRepair === 'layout-migration')}
                     >
                       <Play size={13} strokeWidth={2} aria-hidden />
-                      {confirmRepair === 'layout-migration' ? '确认迁移并替换' : '确认替换并修复'}
+                      {marginShort
+                        ? confirmRepair === 'layout-migration'
+                          ? '仍要继续并迁移'
+                          : '仍要继续并修复'
+                        : confirmRepair === 'layout-migration'
+                          ? '确认迁移并替换'
+                          : '确认替换并修复'}
                     </button>
                     <button
                       type="button"
