@@ -5,6 +5,7 @@ import { DbRepairPanel } from '../src/renderer/src/components/DbRepairPanel';
 
 const fixture = vi.hoisted(() => ({
   freeBytes: 1,
+  detailedBudget: true,
   pick: vi.fn(async () => ({ override: '/synthetic/changed' })),
   reset: vi.fn(async () => ({ override: null })),
   invalidate: vi.fn(async () => {}),
@@ -54,7 +55,7 @@ vi.mock('../src/renderer/src/trpc/client', () => {
                   paths: ['/synthetic/cache'],
                   freeBytes: fixture.freeBytes,
                   requiredBytes: 100,
-                  recommendedBytes: 125,
+                  ...(fixture.detailedBudget ? { recommendedBytes: 125 } : {}),
                 },
               ],
             },
@@ -85,6 +86,7 @@ let finishBackup: () => void;
 beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true);
   fixture.freeBytes = 1;
+  fixture.detailedBudget = true;
   fixture.pick.mockClear();
   fixture.reset.mockClear();
   fixture.invalidate.mockClear();
@@ -192,6 +194,18 @@ it('仅建议余量不足时可以打开确认，明确接受风险后才提交�
   expect(button('仍要继续并修复').disabled).toBe(false);
   await act(async () => button('仍要继续并修复').click());
   expect(fixture.start).toHaveBeenCalledWith(expect.objectContaining({ allowLowSpace: true }));
+});
+
+it('热更新遇到旧主进程预算时明确提示重启，不把旧建议值冒称峰值或锁住缓存位置', async () => {
+  fixture.freeBytes = 110;
+  fixture.detailedBudget = false;
+  await act(async () => finishCheckup());
+  selectDatabase();
+  expect(host.textContent).toContain('主进程仍返回旧版空间预检结果');
+  expect(host.textContent).toContain('旧版预检值');
+  expect(button('开始修复').disabled).toBe(true);
+  expect(button('选择修复缓存位置').disabled).toBe(false);
+  expect(fixture.start).not.toHaveBeenCalled();
 });
 
 it('余量风险确认不沿用到取消后重新打开的修复', async () => {

@@ -1369,6 +1369,8 @@ export function DbRepairPanel({
     dbName === null ? null : (existingDbs.find((row) => row.dbName === dbName) ?? null);
   const currentCheckup = dbName === null ? null : (checkups[dbName] ?? null);
   const readiness = preflight ? READINESS_COPY[preflight.readiness] : null;
+  const spaceBudgetReady =
+    preflight?.space.every((item) => typeof item.recommendedBytes === 'number') === true;
   const spaceShort = Boolean(
     preflight?.space.some((item) => item.freeBytes !== null && item.freeBytes < item.requiredBytes),
   );
@@ -1387,6 +1389,7 @@ export function DbRepairPanel({
     !changingCache &&
     status?.keyPresent === true &&
     preflight !== undefined &&
+    spaceBudgetReady &&
     !spaceShort;
   /**
    * 修复页铺哪些库：**有问题的在前**，完好的收在「其他数据库」后面。
@@ -1806,14 +1809,18 @@ export function DbRepairPanel({
                     }
                     value={item.freeBytes !== null ? formatBytes(item.freeBytes) : '未知'}
                     hint={
-                      <>
-                        <span className="weq-rp-space-line">
-                          预计新增 {formatBytes(item.requiredBytes)}
-                        </span>
-                        <span className="weq-rp-space-line">
-                          建议预留 {formatBytes(item.recommendedBytes)}
-                        </span>
-                      </>
+                      spaceBudgetReady ? (
+                        <>
+                          <span className="weq-rp-space-line">
+                            预计新增 {formatBytes(item.requiredBytes)}
+                          </span>
+                          <span className="weq-rp-space-line">
+                            建议预留 {formatBytes(item.recommendedBytes)}
+                          </span>
+                        </>
+                      ) : (
+                        `旧版预检值 ${formatBytes(item.requiredBytes)}`
+                      )
                     }
                     tone={
                       item.freeBytes === null
@@ -1898,17 +1905,23 @@ export function DbRepairPanel({
               {preflightQuery.error ? (
                 <Note tone="warn">{errMsg(preflightQuery.error)}</Note>
               ) : null}
+              {preflight && !spaceBudgetReady ? (
+                <Note tone="warn">
+                  主进程仍返回旧版空间预检结果，请重启开发版加载更新后再修复。缓存位置仍可更换。
+                </Note>
+              ) : null}
               {readiness && readiness.tone !== 'ok' && !qqOnline ? (
                 <Note tone={readiness.tone}>{readiness.short}</Note>
               ) : null}
-              {preflight?.space
-                .filter((item) => item.freeBytes !== null && item.freeBytes < item.requiredBytes)
-                .map((item) => (
-                  <Note key={item.paths.join('|')} tone="warn">
-                    {item.paths.join('、')}：预计新增峰值约 {formatBytes(item.requiredBytes)}
-                    ，当前可用 {formatBytes(item.freeBytes)}。
-                  </Note>
-                ))}
+              {spaceBudgetReady &&
+                preflight?.space
+                  .filter((item) => item.freeBytes !== null && item.freeBytes < item.requiredBytes)
+                  .map((item) => (
+                    <Note key={item.paths.join('|')} tone="warn">
+                      {item.paths.join('、')}：预计新增峰值约 {formatBytes(item.requiredBytes)}
+                      ，当前可用 {formatBytes(item.freeBytes)}。
+                    </Note>
+                  ))}
               {marginShort && !spaceShort ? (
                 <Note tone="warn">
                   预计峰值空间足够，但建议余量不足；实际占用可能超过估算，继续可能因磁盘写满而失败。
