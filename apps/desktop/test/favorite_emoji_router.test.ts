@@ -13,6 +13,7 @@ const f = vi.hoisted(() => ({
   listRows: vi.fn(),
   resolveFile: vi.fn(),
   sendElements: vi.fn(),
+  setReadState: vi.fn(),
 }));
 vi.mock('../src/main/ocr/local', () => ({
   resolveLocalOcrModel: () => null,
@@ -24,6 +25,7 @@ vi.mock('../src/main/context/app_context', () => {
     emoji: { listFavEmojiRows: f.listRows },
     customEmoji: { resolveFile: f.resolveFile },
     messageSend: { sendElements: f.sendElements },
+    unreadInfo: { setReadState: f.setReadState },
   };
   return {
     getAppContext: () => ({
@@ -72,6 +74,7 @@ beforeEach(async () => {
   ]);
   f.resolveFile.mockImplementation(async () => f.path);
   f.sendElements.mockResolvedValue({ result: 0, msgSeq: 42 });
+  f.setReadState.mockResolvedValue({ undoToken: 't', rows: [] });
 });
 afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
@@ -117,5 +120,24 @@ describe('收藏表情发送 IPC', () => {
     await writeFile(f.path, '损坏图片');
     await expect(accountRouter.createCaller({}).sendElements(input)).rejects.toThrow('原图');
     expect(f.sendElements).not.toHaveBeenCalled();
+  });
+  // whale-io 部署线：回复前标记已读。
+  it('发送前先把目标会话标记为已读', async () => {
+    await accountRouter.createCaller({}).sendElements(input);
+    expect(f.setReadState).toHaveBeenCalledTimes(1);
+    expect(f.setReadState).toHaveBeenCalledWith([{ chatType: 2, uid: '123' }], false);
+    expect(f.setReadState.mock.invocationCallOrder[0]).toBeLessThan(
+      f.sendElements.mock.invocationCallOrder[0],
+    );
+  });
+  it('标记已读失败不阻断发送', async () => {
+    f.setReadState.mockRejectedValue(new Error('未读状态读取失败'));
+    const result = await accountRouter.createCaller({}).sendElements(input);
+    expect(result).toEqual({ result: 0, msgSeq: 42 });
+    expect(f.sendElements).toHaveBeenCalledTimes(1);
+  });
+  it('私聊发送按 chatType=1 标记已读', async () => {
+    await accountRouter.createCaller({}).sendElements({ ...input, peerType: 'c2c' as const });
+    expect(f.setReadState).toHaveBeenCalledWith([{ chatType: 1, uid: '123' }], false);
   });
 });

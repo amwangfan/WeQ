@@ -5515,6 +5515,17 @@ export const accountRouter = router({
         },
       );
       checkCurrent();
+      // whale-io 部署线：回复前先把目标会话标记为已读（本地水位 + 服务器已读上报，
+      // 上报由 manualReadReportEnabled 闸门控制）。标记失败（临时会话、无未读快照、
+      // 库不可写等）不阻断发送。
+      try {
+        await services.unreadInfo.setReadState(
+          [{ chatType: input.peerType === 'group' ? 2 : 1, uid: input.targetId }],
+          false,
+        );
+      } catch {
+        // 忽略标记失败，发送照旧。
+      }
       return services.messageSend.sendElements({
         peerType: input.peerType,
         targetId: input.targetId,
