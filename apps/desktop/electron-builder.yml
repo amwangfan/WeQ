@@ -4,7 +4,8 @@ copyright: Copyright © 2026 weQ contributors
 directories:
   output: release/${version}
   buildResources: build
-beforePack: ../../scripts/package-remote-network.mjs
+# whale-io 部署线：本机无 Go 工具链，beforePack 的 remote-network 构建钩子移除；
+# 辅助程序复用官方安装版二进制（已预置于 tools/remote-network/build/win/x64/）。
 afterPack: ../../scripts/trim-desktop-package.mjs
 afterSign: ../../scripts/verify-desktop-authorization.mjs
 files:

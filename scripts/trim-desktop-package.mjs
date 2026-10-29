@@ -13,7 +13,6 @@ import {
 } from 'node:fs';
 import { createRequire } from 'node:module';
 import { createHash } from 'node:crypto';
-import { verifyPackagedRemoteNetwork } from './package-remote-network.mjs';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
 import {
   installedNativeManifest,
@@ -159,7 +158,15 @@ export function trimDesktopPackage(context) {
           'Contents/Resources',
         )
       : join(context.appOutDir, 'resources');
-  verifyPackagedRemoteNetwork(context, resources);
+  // whale-io 部署线：无 Go 工具链，无法执行 `go version -m` 元数据校验；
+  // 降级为存在性 + 非空校验（二进制复用官方安装版，来源可信）。
+  {
+    const helperName =
+      context.electronPlatformName === 'win32' ? 'weq-remote-network.exe' : 'weq-remote-network';
+    const helperPath = join(resources, 'remote-network', helperName);
+    if (!existsSync(helperPath) || statSync(helperPath).size === 0)
+      throw new Error(`Remote 辅助程序缺失或为空：${helperPath}`);
+  }
   for (const candidate of ['arm64', 'x64']) {
     if (platform === 'darwin' && (candidate === arch || arch === 'universal')) continue;
     rmSync(
