@@ -43,6 +43,8 @@ extraResources:
     to: out/main/chunks
   - from: ../web/dist/public
     to: remote-web
+  # whale-io 专用线说明：辅助程序保留（它同时承载局域网 Remote），但 Tailscale 模式
+  # 已被运行时熔断（setTailscaleEnabled(true) 拒绝）且 UI 入口已移除。
   - from: ../../tools/remote-network/build/${os}/${arch}
     to: remote-network
     filter:

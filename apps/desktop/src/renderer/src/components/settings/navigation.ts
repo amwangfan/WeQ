@@ -230,7 +230,7 @@ export const SETTINGS_ITEM_TARGETS: readonly ItemRedirect[] = [
       ['web-autostart', '启动 WeQ 时自动开启 Web 服务'],
       ['remote-enabled', '允许远程连接', 'WeQ Remote', '远程访问'],
       ['remote-lan', '局域网 IP', '局域网地址'],
-      ['remote-tailscale', 'Tailscale IP', 'Tailscale', '跨网络连接', '内网穿透'],
+      // whale-io 专用线：Tailscale 已剥离，不再提供设置定位入口。
       ['remote-pairing', '配对手机', '设备配对', '手机配对', '配对二维码'],
       ['remote-devices', '已配对设备', '设备授权', '撤销设备授权'],
     ] as const

@@ -45,6 +45,12 @@ export class RemoteRuntime {
   private tailscaleChild: ChildProcessWithoutNullStreams | null = null;
   private tailscaleState: z.infer<typeof networkEvent> = { state: 'offline' };
   private tailscaleClosing: Promise<void> = Promise.resolve();
+  /**
+   * whale-io 专用线保险丝：Tailscale 组件已剥离——所有可能拉起该辅助进程的入口
+   * （显式开关、更换节点、历史状态自动重启）都在此短路；局域网 Remote 不受影响。
+   * 显式标注 boolean：保留原实现分支，便于跟随上游演进时对照。
+   */
+  private readonly tailscaleRemoved: boolean = true;
 
   configure(config: {
     helper: string;
@@ -74,15 +80,21 @@ export class RemoteRuntime {
   }
 
   async setMode(mode: RemoteConnectionMode): Promise<void> {
+    // whale-io 专用线：只保留局域网路径；其余模式随 Tailscale 剥离一并拒绝。
+    if (mode !== 'lan')
+      throw new Error('whale-io 专用版已移除 Tailscale 组件；远程连接请使用局域网入口。');
     this.mode = mode;
     this.store?.save({ mode });
-    await this.setTailscaleEnabled(mode !== 'lan');
+    await this.setTailscaleEnabled(false);
   }
 
   async setTailscaleEnabled(enabled: boolean): Promise<void> {
-    this.store?.save({ tailscaleEnabled: enabled });
-    if (!enabled) this.stopTailscale();
-    else if (this.server) await this.startTailscale();
+    // whale-io 专用线：Tailscale 组件已剥离（辅助程序不再随包分发，UI 入口已隐藏），
+    // 启用请求一律给出可读拒绝；关闭保持幂等（清理历史遗留状态）。
+    if (enabled)
+      throw new Error('whale-io 专用版已移除 Tailscale 组件；远程连接请使用局域网入口。');
+    this.store?.save({ tailscaleEnabled: false });
+    this.stopTailscale();
   }
 
   private stopTailscale(): void {
@@ -105,6 +117,12 @@ export class RemoteRuntime {
   }
 
   private async startTailscale(): Promise<void> {
+    if (this.tailscaleRemoved) {
+      // whale-io 专用线保险丝：含 start()/resume() 里按历史状态自动重启的路径，
+      // 一律不拉起 Tailscale 辅助进程。
+      this.tailscaleState = { state: 'offline' };
+      return;
+    }
     await this.tailscaleClosing;
     if (
       this.tailscaleChild ||
@@ -179,15 +197,8 @@ export class RemoteRuntime {
   }
 
   async changeNetwork(): Promise<void> {
-    // 真正切换节点身份时才撤销旧邀请，防止二维码引用旧节点。
-    this.pairing.cancelInvitation();
-    this.stopTailscale();
-    // 更换身份而不删除原节点；旧节点可在 Tailscale 管理台移除。
-    this.store?.save({
-      tailscaleEnabled: true,
-      networkIdentity: `network-${Date.now()}`,
-    });
-    await this.startTailscale();
+    // whale-io 专用线：Tailscale 已剥离，不再提供「更换节点身份」。
+    throw new Error('whale-io 专用版已移除 Tailscale 组件；远程连接请使用局域网入口。');
   }
 
   status() {

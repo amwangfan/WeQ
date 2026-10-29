@@ -92,7 +92,10 @@ export function RemotePanel({
         button.focus({ preventScroll: true });
     }
   }, [active, keyPrompt]);
-  const tailscale = data?.tailscaleEnabled ?? false;
+  // whale-io 专用线：Tailscale 组件已剥离——运行时熔断（setTailscaleEnabled(true) 拒绝）、
+  // 界面不再展示；保留变量与死分支的原语义，便于跟随上游演进。
+  const TAILSCALE_STRIPPED = true;
+  const tailscale = !TAILSCALE_STRIPPED && (data?.tailscaleEnabled ?? false);
   const tailscaleRunning =
     tailscale && data?.enabled && ['starting', 'login', 'online'].includes(data.network.state);
   const addresses = remoteDirectAddresses(data?.network.addresses ?? [], 'lan');
@@ -152,48 +155,50 @@ export function RemotePanel({
               </div>
             }
           />
-          <Row
-            label="Tailscale IP"
-            desc="WeQ 专用 Tailscale 服务"
-            control={
-              <div className="weq-remote-network-controls">
-                <code role="status">
-                  {tailscaleAddress
-                    ? new URL(tailscaleAddress).hostname
-                    : !data?.enabled || !tailscale
-                      ? '未启动'
-                      : states[data.network.state]}
-                </code>
-                <button
-                  type="button"
-                  className="weq-set-btn weq-set-btn-soft"
-                  disabled={busy || !data?.enabled}
-                  onClick={() => onTailscale?.(!tailscaleRunning)}
-                >
-                  {tailscaleRunning ? <Square size={14} /> : <Play size={14} />}
-                  {tailscaleRunning ? '停止服务' : '启动服务'}
-                </button>
-                {tailscale && data?.network.state === 'login' ? (
-                  <button type="button" className="weq-set-btn" disabled={busy} onClick={onLogin}>
-                    <ExternalLink size={14} />
-                    登录 Tailscale
-                  </button>
-                ) : null}
-                {tailscale ? (
+          {tailscale ? (
+            <Row
+              label="Tailscale IP"
+              desc="WeQ 专用 Tailscale 服务"
+              control={
+                <div className="weq-remote-network-controls">
+                  <code role="status">
+                    {tailscaleAddress
+                      ? new URL(tailscaleAddress).hostname
+                      : !data?.enabled || !tailscale
+                        ? '未启动'
+                        : states[data.network.state]}
+                  </code>
                   <button
                     type="button"
-                    className="weq-set-iconbtn"
-                    title="更换 WeQ 专用 Tailscale 网络"
-                    aria-label="更换 WeQ 专用 Tailscale 网络"
+                    className="weq-set-btn weq-set-btn-soft"
                     disabled={busy || !data?.enabled}
-                    onClick={onChangeNetwork}
+                    onClick={() => onTailscale?.(!tailscaleRunning)}
                   >
-                    <RefreshCw size={15} />
+                    {tailscaleRunning ? <Square size={14} /> : <Play size={14} />}
+                    {tailscaleRunning ? '停止服务' : '启动服务'}
                   </button>
-                ) : null}
-              </div>
-            }
-          />
+                  {tailscale && data?.network.state === 'login' ? (
+                    <button type="button" className="weq-set-btn" disabled={busy} onClick={onLogin}>
+                      <ExternalLink size={14} />
+                      登录 Tailscale
+                    </button>
+                  ) : null}
+                  {tailscale ? (
+                    <button
+                      type="button"
+                      className="weq-set-iconbtn"
+                      title="更换 WeQ 专用 Tailscale 网络"
+                      aria-label="更换 WeQ 专用 Tailscale 网络"
+                      disabled={busy || !data?.enabled}
+                      onClick={onChangeNetwork}
+                    >
+                      <RefreshCw size={15} />
+                    </button>
+                  ) : null}
+                </div>
+              }
+            />
+          ) : null}
           {data && (!data.available || !data.helperInstalled) ? (
             <p className="weq-remote-muted">
               {!data.available ? '仅桌面端可用' : '网络辅助程序未安装'}
@@ -223,38 +228,42 @@ export function RemotePanel({
               {qr ? <RefreshCw size={14} /> : <QrCode size={14} />}
               生成配对码
             </button>
-            <label className="weq-remote-consent">
-              <input
-                type="checkbox"
-                checked={embedKey}
-                disabled={busy}
-                onChange={(event) => setEmbedKey(event.target.checked)}
-              />
-              嵌入 Tailscale Key
-            </label>
-          </div>
-          <div className="weq-remote-bootstrap">
-            <h4>通过 Tailscale 跨网络连接</h4>
-            <p>
-              Tailscale 提供内网穿透，让手机和电脑不在同一个 Wi-Fi 下时，也能连接 WeQ，无需公网 IP
-              或手动配置端口转发。
-            </p>
-            <p>
-              WeQ Remote App 已内置 Tailscale，无需另外安装客户端。勾选「嵌入 Tailscale
-              Key」后，扫码时 App 会使用 Key 加入电脑所在的 Tailscale
-              网络，完成跨网络连接所需的配置。
-            </p>
-            <a
-              href="https://login.tailscale.com/admin/settings/keys"
-              target="_blank"
-              rel="noreferrer"
-            >
-              创建 Tailscale Key <ExternalLink size={12} />
-            </a>
-            {embedKey && !tailscaleAddress ? (
-              <p>请先启动并登录上方的 WeQ 专用 Tailscale 服务。</p>
+            {tailscale ? (
+              <label className="weq-remote-consent">
+                <input
+                  type="checkbox"
+                  checked={embedKey}
+                  disabled={busy}
+                  onChange={(event) => setEmbedKey(event.target.checked)}
+                />
+                嵌入 Tailscale Key
+              </label>
             ) : null}
           </div>
+          {tailscale ? (
+            <div className="weq-remote-bootstrap">
+              <h4>通过 Tailscale 跨网络连接</h4>
+              <p>
+                Tailscale 提供内网穿透，让手机和电脑不在同一个 Wi-Fi 下时，也能连接 WeQ，无需公网 IP
+                或手动配置端口转发。
+              </p>
+              <p>
+                WeQ Remote App 已内置 Tailscale，无需另外安装客户端。勾选「嵌入 Tailscale
+                Key」后，扫码时 App 会使用 Key 加入电脑所在的 Tailscale
+                网络，完成跨网络连接所需的配置。
+              </p>
+              <a
+                href="https://login.tailscale.com/admin/settings/keys"
+                target="_blank"
+                rel="noreferrer"
+              >
+                创建 Tailscale Key <ExternalLink size={12} />
+              </a>
+              {embedKey && !tailscaleAddress ? (
+                <p>请先启动并登录上方的 WeQ 专用 Tailscale 服务。</p>
+              ) : null}
+            </div>
+          ) : null}
           {keyPrompt && active ? (
             <Modal
               title="输入 Tailscale Key"

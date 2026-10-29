@@ -57,7 +57,6 @@ describe('feature_search', () => {
       ['不让 ta 看我的空间', 'qzone'],
       ['不看 ta 的空间', 'qzone'],
       ['允许远程连接', 'remote'],
-      ['Tailscale', 'remote'],
       ['设备配对', 'remote'],
       ['已配对设备', 'remote'],
       ['安装到本机 AI 客户端', 'mcp'],

@@ -128,82 +128,7 @@ describe('电脑端远程连接面板', () => {
     expect(container.textContent).not.toContain('复制配对链接');
   });
 
-  it('Key 默认不选，勾选后点击生成才弹窗；校验后提交并清空', async () => {
-    const onInvite = vi.fn();
-    await render(
-      {
-        ...base,
-        tailscaleEnabled: true,
-        network: { ...base.network, address: 'http://100.64.0.10:7691' },
-      },
-      { onInvite },
-    );
-    expect(document.querySelector('#weq-remote-auth-key')).toBeNull();
-    const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    expect(checkbox.checked).toBe(false);
-    const generate = () =>
-      [...container.querySelectorAll('button')].find((b) => b.textContent?.includes('生成配对码'))!;
-    await act(async () => checkbox.click());
-    await act(async () => {
-      generate().focus();
-      generate().click();
-    });
-    expect(onInvite).not.toHaveBeenCalled();
-    const input = document.querySelector<HTMLInputElement>('#weq-remote-auth-key');
-    expect(input?.type).toBe('password');
-    const authKey = `tskey-auth-${'k'.repeat(40)}`;
-    await act(async () => {
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(
-        input,
-        authKey,
-      );
-      input!.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    await act(async () =>
-      document
-        .querySelector<HTMLButtonElement>('.weq-remote-key-form button[type="submit"]')!
-        .click(),
-    );
-    expect(onInvite).toHaveBeenCalledWith({ authKey });
-    expect(document.querySelector('#weq-remote-auth-key')).toBeNull();
-    expect(document.activeElement).toBe(generate());
-    await act(async () => generate().click());
-    expect(document.querySelector<HTMLInputElement>('#weq-remote-auth-key')?.value).toBe('');
-    await act(async () =>
-      [...document.querySelectorAll<HTMLButtonElement>('.weq-remote-key-form button')]
-        .find((button) => button.textContent === '取消')!
-        .click(),
-    );
-    expect(onInvite).toHaveBeenCalledTimes(1);
-    expect(document.querySelector('#weq-remote-auth-key')).toBeNull();
-  });
-
-  it('局域网直接生成配对码，不出现模式或地址选择器', async () => {
-    const onInvite = vi.fn(),
-      onTailscale = vi.fn();
-    await render({ ...base, mode: 'lan' }, { onInvite, onTailscale });
-    expect(container.querySelector('#weq-remote-auth-key')).toBeNull();
-    await act(async () =>
-      [...container.querySelectorAll('button')]
-        .find((b) => b.textContent?.includes('生成配对码'))
-        ?.click(),
-    );
-    expect(onInvite).toHaveBeenCalledWith(undefined);
-    expect(container.querySelector('select')).toBeNull();
-    expect(container.querySelector('[aria-label="连接方式"]')).toBeNull();
-    expect(container.querySelector('[aria-label="手机上的 Tailscale"]')).toBeNull();
-    await act(async () =>
-      [...container.querySelectorAll('button')]
-        .find((b) => b.textContent?.includes('启动服务'))
-        ?.click(),
-    );
-    expect(onTailscale).toHaveBeenCalledWith(true);
-    expect(container.textContent).toContain('内网穿透');
-    expect(container.textContent).toContain('App 已内置 Tailscale');
-    expect(container.textContent).toContain('Key 加入电脑所在的 Tailscale 网络');
-  });
-
-  it('并列展示局域网和 WeQ 专用节点，不采用系统 Tailscale 的地址', async () => {
+  it('Tailscale 界面已剥离：无复选框、无 Key 弹窗、无跨网络说明与启停控件', async () => {
     const onTailscale = vi.fn();
     await render(
       {
@@ -217,57 +142,66 @@ describe('电脑端远程连接面板', () => {
       },
       { onTailscale },
     );
+    expect(container.querySelector('input[type="checkbox"]')).toBeNull();
     expect(container.querySelector('#weq-remote-auth-key')).toBeNull();
-    expect(container.textContent).toContain('100.64.0.10');
+    expect(container.textContent).not.toContain('Tailscale');
+    expect(container.textContent).not.toContain('内网穿透');
+    expect(container.textContent).not.toContain('100.64.0.10');
+    expect(
+      [...container.querySelectorAll('button')].some(
+        (b) => b.textContent?.includes('启动服务') || b.textContent?.includes('停止服务'),
+      ),
+    ).toBe(false);
+    expect(onTailscale).not.toHaveBeenCalled();
+    // 局域网入口照常可用
     expect(container.textContent).toContain('192.168.1.8');
-    expect(container.textContent).not.toContain('100.64.0.99');
-    await act(async () =>
-      [...container.querySelectorAll('button')]
-        .find((b) => b.textContent?.includes('停止服务'))
-        ?.click(),
-    );
-    expect(onTailscale).toHaveBeenCalledWith(false);
-  });
-
-  it('仅局域网就绪时可普通配对，勾选 Key 则等待专用 Tailscale 就绪', async () => {
-    await render({
-      ...base,
-      tailscaleEnabled: true,
-      network: { state: 'online', addresses: ['https://192.168.1.8:7691'] },
-    });
-    const checkbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]')!;
-    await act(async () => checkbox.click());
-    expect(container.textContent).toContain('请先启动并登录');
     expect(
       [...container.querySelectorAll('button')].find((b) => b.textContent?.includes('生成配对码'))
         ?.disabled,
-    ).toBe(true);
+    ).toBe(false);
   });
 
-  it('专用节点失败后可直接重新启动，Remote 关闭时不能更换节点身份', async () => {
+  it('局域网直接生成配对码，不出现模式、地址选择器或 Tailscale 控件', async () => {
+    const onInvite = vi.fn(),
+      onTailscale = vi.fn();
+    await render({ ...base, mode: 'lan' }, { onInvite, onTailscale });
+    expect(container.querySelector('#weq-remote-auth-key')).toBeNull();
+    await act(async () =>
+      [...container.querySelectorAll('button')]
+        .find((b) => b.textContent?.includes('生成配对码'))
+        ?.click(),
+    );
+    expect(onInvite).toHaveBeenCalledWith(undefined);
+    expect(container.querySelector('select')).toBeNull();
+    expect(container.querySelector('[aria-label="连接方式"]')).toBeNull();
+    expect(container.querySelector('[aria-label="手机上的 Tailscale"]')).toBeNull();
+    expect(
+      [...container.querySelectorAll('button')].find((b) => b.textContent?.includes('启动服务')),
+    ).toBeUndefined();
+    expect(onTailscale).not.toHaveBeenCalled();
+    expect(container.textContent).not.toContain('内网穿透');
+  });
+
+  it('只展示局域网地址；WeQ 专用节点地址与启停不再出现', async () => {
     const onTailscale = vi.fn();
     await render(
       {
         ...base,
         tailscaleEnabled: true,
-        network: { state: 'error', addresses: base.network.addresses },
+        network: {
+          state: 'online',
+          address: 'http://100.64.0.10:7691',
+          addresses: ['https://192.168.1.8:7691', 'https://100.64.0.99:7691'],
+        },
       },
       { onTailscale },
     );
-    const start = [...container.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes('启动服务'),
-    )!;
-    await act(async () => start.click());
-    expect(onTailscale).toHaveBeenCalledWith(true);
-    await render({
-      ...base,
-      enabled: false,
-      tailscaleEnabled: true,
-      network: { state: 'offline' },
-    });
+    expect(container.textContent).toContain('192.168.1.8');
+    expect(container.textContent).not.toContain('100.64.0.99');
+    expect(container.textContent).not.toContain('100.64.0.10');
     expect(
-      container.querySelector<HTMLButtonElement>('[aria-label="更换 WeQ 专用 Tailscale 网络"]')
-        ?.disabled,
-    ).toBe(true);
+      [...container.querySelectorAll('button')].find((b) => b.textContent?.includes('停止服务')),
+    ).toBeUndefined();
+    expect(onTailscale).not.toHaveBeenCalled();
   });
 });
