@@ -104,14 +104,20 @@ async function boot(
   const dataDir = join(config.personaDir, '..', 'data');
   const stats = new StatsStore(join(dataDir, 'stats.json'));
   const resolver = buildEndpointResolver(config.llmProviders);
+  // whale-io 部署线：conversations/memories 默认按 scope 分桶落盘（写只动单键文件、内存 LRU），
+  // 旧单文件自动迁移保留 .migrated；显式 storage.bucketed=false 回到上游单文件布局。
+  const storeOpts = {
+    bucketed: config.storage?.bucketed ?? true,
+    maxCachedBuckets: config.storage?.maxCachedBuckets,
+  };
   const runtime = new AgentRuntime({
     signal,
     rootDir: config.personaDir,
     store,
     endpoints: resolver,
     usage: stats,
-    conversations: new JsonConversationStore(join(dataDir, 'conversations.json')),
-    memories: new JsonMemoryStore(join(dataDir, 'memories.json')),
+    conversations: new JsonConversationStore(join(dataDir, 'conversations.json'), storeOpts),
+    memories: new JsonMemoryStore(join(dataDir, 'memories.json'), storeOpts),
     notes: new JsonNotesStore(join(dataDir, 'notes.json')),
     relations: new JsonRelationStore(join(dataDir, 'relations.json')),
     selfId: config.selfId,

@@ -12,6 +12,12 @@ import { BotCapabilities } from './capabilities';
 import { BotLogger, botErrorMetadata } from './logger';
 
 const HISTORY_CAP = 40;
+/**
+ * 跟踪的对端历史上限（whale-io 部署线）：长跑 bot 的对端数无界（群聊场景按群员 scope），
+ * Map 永不淘汰会缓慢增长。超过上限按最久未用淘汰——丢的只是喂给模型的近 40 轮上下文
+ * （持久对话库 conversations 不受影响），下次消息到达自然重建。
+ */
+const MAX_TRACKED_HISTORIES = 512;
 
 function limit(value: number | undefined, fallback: number): number {
   const resolved = value ?? fallback;
@@ -146,6 +152,17 @@ export class BotOrchestrator {
     }
   }
 
+  /** 写入对端历史并做 LRU 淘汰（Map 迭代序=插入序，delete+set 把键移到最近端）。 */
+  private rememberHistory(historyKey: string, turns: AgentLabChatTurn[]): void {
+    this.histories.delete(historyKey);
+    this.histories.set(historyKey, turns);
+    while (this.histories.size > MAX_TRACKED_HISTORIES) {
+      const oldest = this.histories.keys().next();
+      if (oldest.done) break;
+      this.histories.delete(oldest.value);
+    }
+  }
+
   private async onEvent(
     event: Parameters<Parameters<OneBot11Adapter['onEvent']>[0]>[0],
   ): Promise<void> {
@@ -229,7 +246,7 @@ export class BotOrchestrator {
       { role: 'user', text: msg.text },
       ...result.renderedTurns.map((text): AgentLabChatTurn => ({ role: 'assistant', text })),
     ];
-    this.histories.set(historyKey, next.slice(-HISTORY_CAP));
+    this.rememberHistory(historyKey, next.slice(-HISTORY_CAP));
   }
 
   /** 群聊（单 persona + 意愿闸）：过闸才回，关系/记忆按群友维护。 */
@@ -296,7 +313,7 @@ export class BotOrchestrator {
       for (const t of result.renderedTurns) history.push({ role: 'assistant', text: t });
       this.lastGroupReplyAt.set(msg.peerId, Date.now());
     }
-    this.histories.set(historyKey, history.slice(-HISTORY_CAP));
+    this.rememberHistory(historyKey, history.slice(-HISTORY_CAP));
   }
 
   /** 逐条把 renderedTurns 编码成 OneBot 段发出（分条之间按 replyDelayMs 拟人停顿）。 */

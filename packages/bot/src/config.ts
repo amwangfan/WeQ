@@ -85,6 +85,16 @@ export interface BotConfig {
   features?: BotFeatures;
   /** 本机 WebUI 控制台配置（缺省则不启）。 */
   webui?: WebUiConfig;
+  /**
+   * 存储布局（whale-io 部署线扩展）：bucketed 缺省 **true** —— conversations/memories
+   * 按 scope 分桶落盘（写入只动单键文件、内存 LRU 只驻留热桶），旧单文件自动迁移。
+   * 显式 `{"bucketed": false}` 回到上游单文件布局。
+   */
+  storage?: {
+    bucketed?: boolean;
+    /** 分桶内存 LRU 桶数上限（默认 64）。 */
+    maxCachedBuckets?: number;
+  };
 }
 
 /**
