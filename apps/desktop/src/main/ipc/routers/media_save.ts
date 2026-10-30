@@ -1,5 +1,7 @@
 import { z } from 'zod';
 import { basename, extname, join } from 'node:path';
+import { existsSync, mkdirSync, renameSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { stat, open, unlink } from 'node:fs/promises';
 import { Readable, Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -405,6 +407,99 @@ export const mediaSaveRouter = router({
       },
     });
   }),
+  /**
+   * whale-io 部署线：逐条转发文件消息的「先下载再重发」备料。
+   *
+   * 文件元素的本机路径常常为空（收到后没下载过 / 漫游消息），转发预检因此整条拒发。
+   * 这里复用 chat-file 保存同款链路（本机下载记录 → OIDB 下载地址解析 → 落盘），把
+   * 文件拉进媒体缓存并返回路径，调用方随后走 `account.sendFile` 按路径重发。缓存按
+   * msgId+token+文件名寻址，重复转发不重复下载；半成品以 .part 隔离，完成才改名。
+   */
+  resendPrepare: procedure
+    .input(
+      exportAccountBindingInput.extend({
+        msgId: messageId,
+        token: z.string().optional(),
+        name: z.string().optional(),
+        conv: z.string().optional(),
+        fwdMsgId: messageId.optional(),
+        fwdKind: z.enum(['c2c', 'group']).optional(),
+      }),
+    )
+    .mutation(async ({ input }) => {
+      const context = getAppContext();
+      const services = context.services;
+      if (!services) throw new Error('未打开账号');
+      const check = bindExportSaveRequest(
+        {
+          expectedAccountUin: input.expectedAccountUin ?? context.account?.context.uin.toString(),
+          expectedAccountConfigId:
+            input.expectedAccountConfigId ?? services.accountConfig.getRecord()?.configId,
+        },
+        () => {
+          const ctx = getAppContext();
+          return {
+            uin: ctx.account?.context.uin.toString(),
+            configId: ctx.services?.accountConfig.getRecord()?.configId,
+            services: ctx.services,
+          };
+        },
+      );
+      const source: MediaSaveSource = {
+        kind: 'chat-file',
+        msgId: input.msgId,
+        ...(input.name !== undefined ? { name: input.name } : {}),
+        ...(input.token !== undefined ? { token: input.token } : {}),
+        ...(input.conv !== undefined ? { conv: input.conv } : {}),
+        ...(input.fwdMsgId !== undefined ? { fwdMsgId: input.fwdMsgId } : {}),
+        ...(input.fwdKind !== undefined ? { fwdKind: input.fwdKind } : {}),
+      };
+      const local = await localChatFile(services, source);
+      check();
+      if (local)
+        return { path: local.path, fileName: local.name, fileSize: (await stat(local.path)).size };
+      const found = await findMediaElement(
+        input.msgId,
+        'file',
+        input.token ?? '',
+        input.fwdMsgId,
+        input.fwdKind,
+      );
+      check();
+      if (!found || (input.token && found.element.fileToken !== input.token))
+        throw new Error('未找到所选文件');
+      const fileName = input.name || found.element.fileName || '文件';
+      const groupId = Number(input.conv) || 0;
+      const url =
+        found.conv === null
+          ? await services.mediaUrl.resolveFileUrlUnknownScene(groupId, found.element, fileName)
+          : await services.mediaUrl.resolveFileUrl(found.conv, groupId, found.element, fileName);
+      check();
+      if (!url) throw new Error('文件下载地址不可用');
+      const cacheRoot = context.bootstrap?.userConfig.cacheDir('media');
+      if (!cacheRoot) throw new Error('媒体缓存目录不可用');
+      mkdirSync(cacheRoot, { recursive: true });
+      const key = createHash('sha256')
+        .update(`${input.msgId}:${input.token ?? ''}:${fileName}`)
+        .digest('hex')
+        .slice(0, 16);
+      const safe = basename(fileName.replace(/\\/g, '/')).replace(/[\\/:*?"<>|]/g, '_') || 'file';
+      const finalPath = join(cacheRoot, `resend-${key}-${safe}`);
+      if (!existsSync(finalPath)) {
+        const tmpPath = `${finalPath}.part`;
+        await unlink(tmpPath).catch(() => {});
+        const signal = new AbortController().signal;
+        const response = await openUrl(url, signal, check);
+        try {
+          await copyResponse(response, tmpPath, signal);
+        } finally {
+          await closeResponse(response);
+        }
+        renameSync(tmpPath, finalPath);
+      }
+      check();
+      return { path: finalPath, fileName, fileSize: (await stat(finalPath)).size };
+    }),
   cancel: procedure
     .input(exportAccountBindingInput.extend({ taskId: z.string().min(1) }))
     .mutation(({ input }) => {

@@ -159,6 +159,18 @@ describe('message_repeat', () => {
         ]),
       ).toContain('混合');
     });
+    // whale-io 部署线：文件转发「先下载再重发」的预检放行规则。
+    it('文件无本机缓存但带下载凭据时预检放行，两者皆无才拒绝', () => {
+      expect(forwardUnsupportedReason([{ type: 'file', data: { fileToken: 'tok-1' } }])).toBeNull();
+      expect(
+        forwardUnsupportedReason([{ type: 'file', data: { filePath: '/synthetic/a.txt' } }]),
+      ).toBeNull();
+      expect(forwardUnsupportedReason([{ type: 'file', data: {} }])).toContain('下载凭据');
+      // 带凭据的文件与其它元素混排仍整条拒绝（文件独立管线不支持混合）。
+      expect(
+        forwardUnsupportedReason([{ type: 'file', data: { fileToken: 'tok-1' } }, plain('正文')]),
+      ).toContain('混合');
+    });
   });
 
   describe('单条消息 +1 可用性', () => {

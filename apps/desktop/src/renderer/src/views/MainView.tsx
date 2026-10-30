@@ -8761,6 +8761,30 @@ function MainWorkspace(): ReactElement {
       (message as Message & { qqElements?: RepeatElement[] }).qqElements ?? []
     ).filter((element) => element.type !== 'reply');
     const elements = await resolveMentions(source, destination, isCurrent);
+    // whale-io 部署线：单文件消息本机无缓存时，先让服务端按 msgId+token 下载落盘
+    // （mediaSave.resendPrepare），拿到路径后走原有 sendFile 管线重发。
+    const singleFile = elements.length === 1 && elements[0]?.type === 'file' ? elements[0] : null;
+    if (singleFile && message.msgId) {
+      const data = singleFile.data ?? {};
+      const localPath =
+        (typeof data.localPath === 'string' && data.localPath) ||
+        (typeof data.filePath === 'string' && data.filePath);
+      const token = typeof data.fileToken === 'string' ? data.fileToken : '';
+      if (!localPath && token) {
+        const prepared = await client.account.mediaSave.resendPrepare.mutate({
+          ...(account ? { expectedAccountUin: account } : {}),
+          ...(expectedAccountConfigId ? { expectedAccountConfigId } : {}),
+          msgId: message.msgId,
+          token,
+          ...(typeof data.fileName === 'string' && data.fileName
+            ? { name: data.fileName }
+            : {}),
+          conv: message.conversationId,
+        });
+        if (!isCurrent()) throw new Error('账号已切换或转发已停止');
+        elements[0] = { ...singleFile, data: { ...data, filePath: prepared.path } };
+      }
+    }
     const stickers = new Map<string, ComposerSuperSticker>();
     if (repeatNeedsStickerCatalog(elements))
       collectSuperStickers(await client.account.emojiPanel.overview.query(), stickers);

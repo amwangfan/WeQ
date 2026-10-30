@@ -195,6 +195,13 @@ export function forwardUnsupportedReason(elements: readonly RepeatElement[]): st
         continue;
       return '此类表情尚不能等价重发';
     }
+    // whale-io 部署线：本机无缓存但带 fileToken 的文件，发送时先由服务端下载落盘再
+    // 重发（见 MainView.forwardMessage），预检放行；路径与凭据都没有的才拒。
+    if (element.type === 'file') {
+      if (!text(data.localPath) && !text(data.filePath) && !text(data.fileToken))
+        return '文件没有本机缓存且缺少下载凭据，无法重发';
+      continue;
+    }
     const segment = repeatElementSegment(element);
     if (!segment || segment.t === 'opaque' || segment.t === 'node')
       return `此类内容尚不能等价重发：${element.type ?? '未知元素'}`;
