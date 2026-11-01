@@ -507,6 +507,34 @@ describe('account monitor authorization and SSO readiness', () => {
     expect(f.hook.ensure).not.toHaveBeenCalled();
     expect(tickets.rkeys).not.toHaveBeenCalled();
   });
+
+  // whale-io 部署线：按需窗口重开时的 TTL 感知收割。
+  it('重开窗且会话物料与票据都新鲜时：只补登记 SSO 会话，零收割零 attach', async () => {
+    const f = fixture(true);
+    f.record.rkeys = [{ type: 10, expiresAt: Date.now() + 3_600_000 }];
+    f.record.clientKey = { expiresAt: Date.now() + 3_600_000 };
+    f.monitor.start();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(f.record.qqOnline).toBe(true);
+    expect(f.nt.setSsoSession).toHaveBeenCalled();
+    expect(f.hook.attach).not.toHaveBeenCalled();
+    expect(f.hook.ensure).not.toHaveBeenCalled();
+    expect(tickets.rkeys).not.toHaveBeenCalled();
+    expect(tickets.clientKey).not.toHaveBeenCalled();
+    f.monitor.stop();
+  });
+
+  it('重开窗但票据过期时：照常全量收割', async () => {
+    const f = fixture(true);
+    f.record.rkeys = [];
+    f.record.clientKey = null;
+    f.monitor.start();
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(f.nt.setSsoSession).toHaveBeenCalled();
+    expect(tickets.rkeys).toHaveBeenCalled();
+    expect(tickets.clientKey).toHaveBeenCalled();
+    f.monitor.stop();
+  });
 });
 
 function deferred<T>() {

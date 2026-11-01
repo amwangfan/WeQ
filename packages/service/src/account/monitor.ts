@@ -294,7 +294,10 @@ export class AccountMonitorService {
     this.harvestRetry = null;
     this.markOnline(pid);
     this.logger.info('account detected online', { event: 'account-online', pid });
-    await this.harvest(pid, generation);
+    // whale-io 部署线：开窗（重新 attach）时按 TTL 跳过仍然新鲜的收割项——
+    // 会话物料完整且 rkey/clientKey 未过期就只补登记 SSO 会话（零发包零读内存），
+    // 过期项才重新获取。首发/物料不全时 harvestIfStale 自己回落到全量 harvest。
+    await this.harvestIfStale(pid, generation);
     if (this.isCurrent(generation)) this.schedulePidPoll(PID_POLL_MS);
   }
 
