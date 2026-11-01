@@ -666,7 +666,24 @@ export const bootstrapRouter = router({
   }),
 
   /** 各窗口与 Web 客户端读取同一宿主的有效运行态。 */
-  getFullModeState: procedure.query(() => ({ allowed: fullModeAllowed(getAppContext()) })),
+  getFullModeState: procedure.query(async () => {
+    const ctx = getAppContext();
+    const allowed = fullModeAllowed(ctx);
+    // whale-io 部署线：`ready` 才是「现在就能发」——策略允许（allowed）不代表 attach
+    // 与会话登记已完成（冷启动首次开窗的收割要几秒，抢跑发会失败）。判定取原生侧
+    // 当前 pid 的 SSO 会话登记状态；关窗/未登出/探测失败一律 false。旧调用方只读
+    // allowed，向后兼容。
+    let ready = false;
+    const pid = ctx.services?.accountConfig.getRecord()?.qqPid ?? null;
+    if (allowed && pid != null) {
+      try {
+        ready = await requirePlatform().native.ntHelper.hasSsoSession(pid);
+      } catch {
+        ready = false;
+      }
+    }
+    return { allowed, ready };
+  }),
 
   setRestrictedModeBannerEnabled: procedure
     .input(z.object({ enabled: z.boolean() }).strict())

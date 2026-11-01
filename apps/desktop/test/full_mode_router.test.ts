@@ -5,8 +5,11 @@ import { bootstrapRouter } from '../src/main/ipc/routers/bootstrap';
 import { fullModeAllowed, clearFullMode } from '../src/main/context/full_mode';
 const f = vi.hoisted(() => {
   const settings = { autoAttachQq: false };
+  const ssoReady = { value: false };
   const services = {
-    accountConfig: { getRecord: () => ({ uin: '10001', configId: 'synthetic-live' }) },
+    accountConfig: {
+      getRecord: () => ({ uin: '10001', configId: 'synthetic-live', qqPid: ssoReady.value ? 4242 : null }),
+    },
   };
   const host = {
     account: { context: { uin: '10001' } },
@@ -20,11 +23,14 @@ const f = vi.hoisted(() => {
     refreshRkeysNow: vi.fn(),
     services,
   };
-  return { host, settings, services };
+  return { host, settings, services, ssoReady };
 });
 vi.mock('../src/main/context/app_context', () => ({
   getAppContext: () => f.host,
   requireBootstrap: () => f.host.bootstrap,
+  requirePlatform: () => ({
+    native: { ntHelper: { hasSsoSession: async () => f.ssoReady.value } },
+  }),
 }));
 beforeEach(() => {
   clearFullMode(f.host);
@@ -43,13 +49,27 @@ it('真实路由只记录当前宿主运行请求，不写持久偏好且不宣�
 });
 it('窗口/Web 查询共同读取宿主运行态；关闭自动策略仍保留手动请求', async () => {
   const caller = bootstrapRouter.createCaller({});
-  expect(await caller.getFullModeState()).toEqual({ allowed: false });
+  expect(await caller.getFullModeState()).toEqual({ allowed: false, ready: false });
   await accountRouter.createCaller({}).requestFullMode(input);
-  expect(await caller.getFullModeState()).toEqual({ allowed: true });
+  expect(await caller.getFullModeState()).toEqual({ allowed: true, ready: false });
   await caller.setAutoAttachQq({ enabled: false });
   expect(f.host.applyFullModePolicy).toHaveBeenCalledOnce();
-  expect(await caller.getFullModeState()).toEqual({ allowed: true });
+  expect(await caller.getFullModeState()).toEqual({ allowed: true, ready: false });
   expect(f.settings.autoAttachQq).toBe(false);
+});
+// whale-io 部署线：ready 只在「允许 + 有在线 pid + SSO 会话已登记」时为真。
+it('ready 反映 SSO 会话登记状态，不只是策略门', async () => {
+  const caller = bootstrapRouter.createCaller({});
+  await accountRouter.createCaller({}).requestFullMode(input);
+  // 允许但无 SSO 登记 → 未就绪
+  expect(await caller.getFullModeState()).toEqual({ allowed: true, ready: false });
+  // 登记完成（夹具带上 qqPid 且 hasSsoSession 为真）→ 就绪
+  f.ssoReady.value = true;
+  expect(await caller.getFullModeState()).toEqual({ allowed: true, ready: true });
+  // 关窗后即便登记仍在，策略不允许也就绪失败
+  await caller.setAutoAttachQq({ enabled: false });
+  clearFullMode(f.host);
+  expect(await caller.getFullModeState()).toEqual({ allowed: false, ready: false });
 });
 it.each([
   { ...input, expectedAccountUin: '10002' },
