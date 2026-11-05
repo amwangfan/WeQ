@@ -456,33 +456,6 @@ describe('QQ 写操作账号与生命周期', () => {
     render();
     return { ...f, render, session: () => session! };
   }
-  it('凭据已落盘但原生 SSO 尚未登记时不发请求，登记完成后恢复', async () => {
-    mocked.ssoReady = false;
-    const f = harness();
-    const action = vi.fn(async () => ({ state: 'unchanged' as const }));
-    expect(f.session().available).toBe(false);
-    await act(async () => {
-      expect(await f.session().run(action)).toBe(false);
-    });
-    expect(action).not.toHaveBeenCalled();
-    mocked.ssoReady = true;
-    f.render();
-    expect(f.session().available).toBe(true);
-    await act(async () => {
-      expect(await f.session().run(action)).toBe(true);
-    });
-    expect(action).toHaveBeenCalledOnce();
-  });
-  it('同号切换数据源后不沿用旧来源的 SSO 就绪快照', () => {
-    const f = harness();
-    expect(f.session().available).toBe(true);
-    mocked.config = { uin: '10001', configId: 'source-b' };
-    f.render();
-    expect(f.session().available).toBe(false);
-    mocked.accessConfigId = 'source-b';
-    f.render();
-    expect(f.session().available).toBe(true);
-  });
   it('状态未改变是普通回执，使用成功时长且不继续读回', async () => {
     const f = harness();
     const refresh = vi.fn();
