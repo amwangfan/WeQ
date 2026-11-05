@@ -1010,6 +1010,7 @@ export class MessageSendService {
         ? {
             dataline: {
               selfUin: target.uin,
+              selfUid: this.session.selfUid ?? '',
               deviceUid,
               terminalType: device === 'pc' ? 1 : device === 'phone' ? 2 : 3,
             },
