@@ -7,9 +7,9 @@ import { useToast } from '../src/renderer/src/components/Toast';
 
 const cases = [
   ['components/ImageLightbox.tsx', '没识别到文字'],
-  ['components/UdpCapturePanel.tsx', '没有可导出的数据报'],
+  // whale-io 部署线：UdpCapturePanel（UDP 抓包特性）与 GlobalSettingsSection 的
+  // 「已安排清除剩余项目」（清除并重启特性）在本分支不存在，对应两例移除。
   ['components/settings/McpServerSection.tsx', '没有可安装的客户端'],
-  ['components/settings/GlobalSettingsSection.tsx', '已安排清除剩余项目'],
   ['components/settings/AgentLabSection.tsx', '请先填写 Base URL。'],
   ['components/settings/AgentLabSection.tsx', '请先添加并填写一个带「聊天」能力的模型。'],
   ['components/settings/VoiceTranscribeSection.tsx', '请先填写服务地址（Base URL）。'],
