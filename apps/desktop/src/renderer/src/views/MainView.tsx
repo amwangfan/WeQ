@@ -5182,7 +5182,9 @@ function MainWorkspace(): ReactElement {
           setMergeForwardDraft({
             draft:
               c.type === 'group'
-                ? { ...draft, title: draft.title || draftTitle(draft.nodes, 'group') }
+                ? // whale-io 部署线：draftTitle 的双参形态来自未摘入的 63f9681e
+                  // （群聊记录标题缺省值），本分支用单参版本。
+                  { ...draft, title: draft.title || draftTitle(draft.nodes) }
                 : draft,
             senderMode: 'conversation',
             members,
